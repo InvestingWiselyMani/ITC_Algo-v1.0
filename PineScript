@@ -1,0 +1,196 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © amrobotrade
+// 
+//      {{strategy.order.alert_message}}
+//@version=5
+strategy("ITC v5.0", overlay=true,  initial_capital = 500000, commission_type = strategy.commission.cash_per_order, commission_value = 1)
+import amrobotrade/MyTargetStopLoss/1 as TGT
+// Get user input
+exchange = input.string('NFO', 'EXCHANGE', options=['NSE', 'NFO', 'MCX', 'OTHER'], group = "Setting")
+ts = input.string('ITC23SEPFUT', 'TRADE SYMBOL', group = "Setting")
+qty = input.int(defval = 1600, title = "Quantity", step = 5, group = "Setting")
+
+trailSource         = input.string(title="Trail Source", defval="Close", options=["Close", "Open"], group = "Set up risk : reward")
+rAmount             = input.int(10000, "Risk Amount",  group = "Set up risk : reward")
+
+// Make inputs that set the take profit % (optional)
+string GRP7           = "════════  Long Target  ════════"
+LongPercOne = input.float(title='Take Profit One (%)', minval=0.0, step=0.1, defval=1.0, group = GRP7) / 100
+LongPercTwo = input.float(title='Take Profit Two (%)', minval=0.0, step=0.1, defval=1.5, group = GRP7) / 100
+LongPercThree = input.float(title='Take Profit Three (%)', minval=0.0, step=0.1, defval=3.3, group = GRP7) / 100
+// LongPercFore = input.float(title='Take Profit Fore (%)', minval=0.0, step=0.1, defval=3.0, group = GRP7) / 100
+// LongPercFive = input.float(title='Take Profit Five (%)', minval=0.0, step=0.1, defval=4.0, group = GRP7) / 100
+
+string GRP8           = "════════  Short Target  ═════════"
+ShortPercOne = input.float(title='Take Profit One (%)', minval=0.0, step=0.1, defval=1.0, group = GRP8) / 100
+ShortPercTwo = input.float(title='Take Profit Two (%)', minval=0.0, step=0.1, defval=1.5, group = GRP8) / 100
+ShortPercThree = input.float(title='Take Profit Three (%)', minval=0.0, step=0.1, defval=3.3, group = GRP8) / 100
+// ShortPercFore = input.float(title='Take Profit Fore (%)', minval=0.0, step=0.1, defval=2.0, group = GRP8) / 100
+// ShortPercFive = input.float(title='Take Profit Five (%)', minval=0.0, step=0.1, defval=2.5, group = GRP8) / 100
+
+BBperiod      = input.int(defval = 21,     title = "BB Period",     minval = 1, group = "SMA Deviations")
+BBdeviations  = input.float(defval = 1.00,     title = "BB Deviations",   minval = 0.1, step=0.05, group = "SMA Deviations")
+UseATRfilter  = input(defval = true, title = "ATR Filter", group = "SMA Deviations")
+ATRperiod     = input.int(defval = 14,     title = "ATR Period",     minval = 1, group = "SMA Deviations")
+hl            = input(defval = false, title = "Hide Labels", group = "SMA Deviations")
+ema_period1    = input.int(defval = 38, title = "EMA Period 1", step=1, group = "Double EMA")
+ema_period2    = input.int(defval = 50, title = "EMA Period 2", step=1, group = "Double EMA")
+cci_period    = input.int(defval = 22, title = "CCI Period", step=1, group = "CCI")
+cciBuyLevel    = input.int(defval = 140, title = "Buy Level", step=10, group = "CCI")
+cciSellLevel    = input.int(defval = -110, title = "Sell Level", step=10, group = "CCI")
+
+
+ema34 = ta.ema(close, ema_period1)
+ema50 = ta.ema(close, ema_period2)
+ema34plot = plot(ema34, color=ema34 > ema50 ? color.rgb(247, 170, 5, 50) : color.rgb(238, 82, 255, 50), style=plot.style_line, linewidth=1, title="EMA(34)")
+ema50plot = plot(ema50, color=ema34 > ema50 ? color.rgb(247, 170, 5, 50) : color.rgb(238, 82, 255, 50),  style=plot.style_line, linewidth=1, title="EMA(50)")
+fill(ema34plot, ema50plot, color=ema34 > ema50 ? color.rgb(247, 170, 5, 80) : color.rgb(238, 82, 255, 80), editable=true)
+//
+BBUpper = ta.sma (close,BBperiod)+ta.stdev(close, BBperiod)*BBdeviations
+BBLower = ta.sma (close,BBperiod)-ta.stdev(close, BBperiod)*BBdeviations
+//
+TrendLine = 0.0
+iTrend = 0.0
+buy = 0.0
+sell = 0.0
+//
+BBSignal = close>BBUpper? 1 : close<BBLower? -1 : 0
+// 
+atr = ta.atr(ATRperiod)
+if BBSignal == 1 and UseATRfilter == 1
+    TrendLine:=low - atr
+    if TrendLine<TrendLine[1] 
+        TrendLine:=TrendLine[1]
+if BBSignal == -1 and UseATRfilter == 1
+    TrendLine:=high + atr
+    if TrendLine>TrendLine[1]
+        TrendLine:=TrendLine[1]
+if BBSignal == 0 and UseATRfilter == 1
+    TrendLine:=TrendLine[1]
+//
+if BBSignal == 1 and UseATRfilter == 0
+    TrendLine:=low
+    if TrendLine<TrendLine[1] 
+        TrendLine:=TrendLine[1]
+if BBSignal == -1 and UseATRfilter == 0
+    TrendLine:=high
+    if TrendLine>TrendLine[1]
+        TrendLine:=TrendLine[1]
+if BBSignal == 0 and UseATRfilter == 0
+    TrendLine:=TrendLine[1]
+//
+iTrend:=iTrend[1]
+if TrendLine>TrendLine[1] 
+    iTrend:=1
+if TrendLine<TrendLine[1] 
+    iTrend:=-1
+//
+buy:=iTrend[1]==-1 and iTrend==1 ? 1 : na
+sell:=iTrend[1]==1 and iTrend==-1? 1 : na
+//
+small_atr = ta.atr(8)
+plot(TrendLine, color=iTrend > 0?color.blue:color.red ,style=plot.style_line,linewidth=2,title="Trend Line") 
+
+// Place the Order 
+longEntry_1 = '[{"TT":"BUY","E":"' + exchange + '","TS":"' + ts + '","Q":"6400","OT":"MARKET","P":"CNC","VL":"DAY","AT":"UPSTOX"}]'
+shortEntry_1 = '[{"TT":"SELL","E":"' + exchange + '","TS":"' + ts + '","Q":"6400","OT":"MARKET","P":"CNC","VL":"DAY","AT":"UPSTOX"}]'
+
+longEntry_2 = '[{"TT":"BUY","E":"' + exchange + '","TS":"' + ts + '","Q":"1600","OT":"MARKET","P":"CNC","VL":"DAY","AT":"UPSTOX"}]'
+shortEntry_2 = '[{"TT":"SELL","E":"' + exchange + '","TS":"' + ts + '","Q":"1600","OT":"MARKET","P":"CNC","VL":"DAY","AT":"UPSTOX"}]'
+
+// Frist Target should exit 5qty
+closeLast = '[{"CLOSE":"CLOSE","TS":"' + ts + '","E":"' + exchange + '","Q":"1600","P":"CNC","AT":"UPSTOX"}]'
+
+//Exit the Order one by one 
+target = '[{"CLOSE":"CLOSE","TS":"' + ts + '","E":"' + exchange + '","Q":"1600","P":"CNC","AT":"UPSTOX"}]'
+
+// squared off
+exitAll = '[{"CLOSE":"CLOSE","TS":"' + ts + '","E":"' + exchange + '","P":"CNC","AT":"UPSTOX"}]'
+
+
+// Declare trailing price variable (stores our trail stop value)
+var float trailPrice    = na
+float next_trailPrice   = na
+float action            = na
+float StopDistance      = na
+var float takeprofitlevel_1   = na
+var float takeprofitlevel_2   = na
+var float stoplosslevel     = na
+var isBuy = false
+var isSell = false
+// Get required trailing stop variables
+int rPoint              = rAmount/qty
+var openTrade =  strategy.opentrades.size(strategy.opentrades)
+float currEntryPrice = strategy.opentrades.entry_price(strategy.opentrades - 1)
+isEMAUp = ta.crossover(close, ema34)
+isEMADown = ta.crossunder(close, ema34)
+long_cci = ta.cci(hlc3, cci_period) > cciBuyLevel
+short_cci = ta.cci(hlc3, cci_period) < cciSellLevel
+
+if ema34 > ema50
+    if iTrend > 0 
+        if long_cci and isBuy == false 
+            strategy.entry("Long", strategy.long, qty=4, alert_message=longEntry_1)
+            isBuy := true
+else if ema34 < ema50
+    if iTrend < 0
+        if short_cci and isSell == false
+            strategy.entry("Short", strategy.short, qty=4, alert_message=shortEntry_1)
+            isSell := true
+
+next_trailPrice := switch trailSource
+    "Close"     => action := (strategy.position_size > 0 ? close[1] - rPoint : close[1] - currEntryPrice + (currEntryPrice + rPoint)) 
+    "Open"      => action := (strategy.position_size > 0 ? open[1] - rPoint : open[1] - currEntryPrice + (currEntryPrice + rPoint)) 
+
+stopLoss = strategy.position_size > 0 ? currEntryPrice - rPoint : rPoint + currEntryPrice
+
+[LT1, LT2, LT3, LT4, LT5,_] = TGT.getLongTarget(LongPercOne, LongPercTwo, LongPercThree, 0.0, 0.0, 0.0)
+[ST1, ST2, ST3, ST4, ST5,_] = TGT.getShortTarget(ShortPercOne, ShortPercTwo, ShortPercThree, 0.0, 0.0, 0.0)
+
+
+// Plot take profit values for confirmation
+plot(series=strategy.position_size > 0 ? LT1 : ST1, color=color.new(color.fuchsia, 0), style=plot.style_linebr, linewidth=1, title='Take Profit')
+plot(series=strategy.position_size > 0 ? LT2 : ST2, color=color.new(color.orange, 0), style=plot.style_linebr, linewidth=1, title='Take Profit')
+plot(series=strategy.position_size > 0 ? LT3 : ST3, color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1, title='Take Profit')
+// plot(series=strategy.position_size > 0 ? LT4 : ST4, color=color.new(color.orange, 0), style=plot.style_linebr, linewidth=1, title='Take Profit')
+// plot(series=strategy.position_size > 0 ? LT5 : ST5, color=color.new(color.purple, 0), style=plot.style_linebr, linewidth=1, title='Take Profit')
+
+// Check for trailing stop update
+if strategy.position_size != 0 and barstate.isconfirmed
+    // Trail long stop ONLY IF temp trailPrice is not set or is a higher price
+    if (next_trailPrice > trailPrice or na(trailPrice)) and strategy.position_size > 0
+        trailPrice := next_trailPrice
+    if (next_trailPrice < trailPrice or na(trailPrice)) and strategy.position_size < 0
+        trailPrice := next_trailPrice
+else
+    trailPrice := na
+
+// Draw data to chart
+plot(strategy.position_size > 0 ? trailPrice : trailPrice, color=color.aqua, style=plot.style_linebr, title="Trailing Stop")
+plot(strategy.position_size > 0 ? currEntryPrice : currEntryPrice, color=color.silver, style=plot.style_linebr, title="Entry")
+
+strategy.exit(id="Exit Long_1", from_entry="Long", qty = 1, limit = LT1, stop=trailPrice, alert_message=target)
+strategy.exit(id="Exit Long_2", from_entry="Long", qty = 1, limit = LT2, stop=trailPrice, alert_message=target)
+strategy.exit(id="Exit Long_3", from_entry="Long", qty = 1, limit = LT3, stop=trailPrice, alert_message=target)
+// strategy.exit(id="Exit Long_4", from_entry="Long", qty = 1, stop=trailPrice, alert_message=target)
+// strategy.exit(id="Exit Long_5", from_entry="Long", qty = 1600, limit = LT5, stop=trailPrice, alert_message=target)
+strategy.exit(id="Exit Short_1", from_entry="Short", qty = 1, limit = ST1, stop=trailPrice, alert_message=target)
+strategy.exit(id="Exit Short_2", from_entry="Short", qty = 1, limit = ST2, stop=trailPrice, alert_message=target)
+strategy.exit(id="Exit Short_3", from_entry="Short", qty = 1, limit = ST3, stop=trailPrice, alert_message=target)
+// strategy.exit(id="Exit Short_4", from_entry="Short", qty = 1, stop=trailPrice, alert_message=target)
+// strategy.exit(id="Exit Short_5", from_entry="Short", qty = 1600, limit = ST5, stop=trailPrice, alert_message=target)
+
+
+
+// Exit trade if stop is hit
+if iTrend < 0 and isBuy == true
+    strategy.close_all( alert_message=exitAll )
+    isBuy := false
+    
+if iTrend > 0 and isSell == true
+    strategy.close_all( alert_message=exitAll )
+    isSell := false
+
+
+
+
